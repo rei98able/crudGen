@@ -4,20 +4,21 @@ import com.intellij.database.model.DasColumn;
 import com.intellij.database.psi.DbTable;
 import com.intellij.database.util.DasUtil;
 import com.intellij.ide.highlighter.JavaFileType;
-import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationGroupManager;
 import com.intellij.notification.NotificationType;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
-import com.intellij.psi.*;
-import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.psi.search.PsiShortNamesCache;
+import com.intellij.openapi.roots.ProjectRootManager;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.JavaPsiFacade;
+import com.intellij.psi.PsiDirectory;
+import com.intellij.psi.PsiFileFactory;
+import com.intellij.psi.PsiManager;
 import com.intellij.webSymbols.utils.NameCaseUtils;
 
 import java.io.IOException;
 import java.util.Arrays;
-import java.util.List;
 
 public class UtilServiceImpl implements UtilService {
 
@@ -36,7 +37,7 @@ public class UtilServiceImpl implements UtilService {
 
     @Override
     public void generateEntity(DbTable table) throws IOException {
-        PsiDirectory psiDirectory = createPackage(MODEL_PACKAGE_NAME).getDirectories()[0];
+        PsiDirectory psiDirectory = createPackage(MODEL_PACKAGE_NAME);
         PsiFileFactory psiFileFactory = PsiFileFactory.getInstance(project);
         String transformedEntityName = NameCaseUtils.toPascalCase(table.getName() + "Entity");
         String className = transformedEntityName + JAVA_CLASS_FORMAT;
@@ -115,7 +116,7 @@ public class UtilServiceImpl implements UtilService {
 
     @Override
     public void generateRepo(DbTable table) throws IOException {
-        PsiDirectory psiDirectory = createPackage(REPOSITORY_PACKAGE_NAME).getDirectories()[0];
+        PsiDirectory psiDirectory = createPackage(REPOSITORY_PACKAGE_NAME);
         PsiFileFactory psiFileFactory = PsiFileFactory.getInstance(project);
         String transformedRepositoryName = NameCaseUtils.toPascalCase(table.getName() + "Repository");
         String className = transformedRepositoryName + JAVA_CLASS_FORMAT;
@@ -128,28 +129,27 @@ public class UtilServiceImpl implements UtilService {
     }
 
     private String generateRepositoryTemplate(DbTable table, String transformedRepositoryName) {
-        String pkType = DasUtil
-                .getColumns(table)
-                .toStream()
-                .filter(DasUtil::isPrimary)
-                .peek(p -> LOG.debug(p.getDasType().getSpecification()))
-                .map(p -> p.getDasType().getSpecification().equals("bigint") ||
-                        p.getDasType().getSpecification().equals("integer") ? "Long" : "String")
-                .findFirst().orElseThrow();
+//        String pkType = DasUtil
+//                .getColumns(table)
+//                .toStream()
+//                .filter(DasUtil::isPrimary)
+//                .peek(p -> LOG.debug(p.getDasType().getSpecification()))
+//                .map(p -> p.getDasType().getSpecification().equals("bigint") ||
+//                        p.getDasType().getSpecification().equals("integer") ? "Long" : "String")
+//                .findFirst().orElseThrow();
         return String.format(
                 """
                         import org.springframework.data.jpa.repository.JpaRepository;
                                        
-                        public interface %s extends JpaRepository<%s, %s> {}
+                        public interface %s extends JpaRepository<%s, Long> {}
                         """,
                 transformedRepositoryName,
-                NameCaseUtils.toPascalCase(table.getName()) + "Entity",
-                pkType);
+                NameCaseUtils.toPascalCase(table.getName()) + "Entity");
     }
 
     @Override
     public void generateServiceInterface(String name) throws IOException {
-        PsiDirectory psiDirectory = createPackage(SERVICE_PACKAGE_NAME).getDirectories()[0];
+        PsiDirectory psiDirectory = createPackage(SERVICE_PACKAGE_NAME);
         PsiFileFactory psiFileFactory = PsiFileFactory.getInstance(project);
         String className = name + "Service" + JAVA_CLASS_FORMAT;
 
@@ -186,7 +186,7 @@ public class UtilServiceImpl implements UtilService {
 
     @Override
     public void generateServiceInterfaceImpl(String name) throws IOException {
-        PsiDirectory psiDirectory = createPackage(SERVICE_PACKAGE_NAME).getDirectories()[0];
+        PsiDirectory psiDirectory = createPackage(SERVICE_PACKAGE_NAME);
         PsiFileFactory psiFileFactory = PsiFileFactory.getInstance(project);
         String className = name + "ServiceImpl" + JAVA_CLASS_FORMAT;
 
@@ -204,6 +204,7 @@ public class UtilServiceImpl implements UtilService {
                         import lombok.RequiredArgsConstructor;
                         import org.modelmapper.ModelMapper;
                         import java.util.List;
+                        import org.springframework.transaction.annotation.Transactional;
                                                 
                         @Service
                         @RequiredArgsConstructor
@@ -236,7 +237,7 @@ public class UtilServiceImpl implements UtilService {
                              public %4$s update(%4$s entity){
                                 %4$s entityFromDb = repository.findById(entity.getId()).orElseThrow();
                                 modelMapper.map(entity, entityFromDb);
-                                return repository.saveAmdFlush(entityFromDb);
+                                return repository.saveAndFlush(entityFromDb);
                              }
                              
                              @Transactional
@@ -254,7 +255,7 @@ public class UtilServiceImpl implements UtilService {
 
     @Override
     public void generateController(String name) throws IOException {
-        PsiDirectory psiDirectory = createPackage(CONTROLLER_PACKAGE_NAME).getDirectories()[0];
+        PsiDirectory psiDirectory = createPackage(CONTROLLER_PACKAGE_NAME);
         PsiFileFactory psiFileFactory = PsiFileFactory.getInstance(project);
         String className = name + "Controller" + JAVA_CLASS_FORMAT;
 
@@ -323,27 +324,39 @@ public class UtilServiceImpl implements UtilService {
         return NameCaseUtils.toPascalCase(name);
     }
 
-    private PsiPackage createPackage(String packageName) throws IOException {
+    private synchronized PsiDirectory createPackage(String packageName) throws IOException {
         JavaPsiFacade psiFacade = JavaPsiFacade.getInstance(project);
-        PsiPackage psiPackage = psiFacade.findPackage(packageName);
+        VirtualFile[] vFiles = ProjectRootManager.getInstance(project)
+                .getContentSourceRoots();
 
-        if (psiPackage == null) {
-            PsiDirectory baseDir = psiPackage.getDirectories()[0];
-            if(baseDir == null){
-                NotificationGroupManager.getInstance()
-                        .getNotificationGroup("CrudGen")
-                        .createNotification("Cannot Find A SpringBootApplication class!", NotificationType.ERROR)
-                        .notify(project);
-                throw new RuntimeException("Cannot find base dir");
-            }
+        VirtualFile applicationLocation = findApplicationJavaClassPackage(vFiles[0]);
 
-            baseDir.createSubdirectory(packageName);
 
-            psiPackage = psiFacade.findPackage(packageName);
+        PsiDirectory baseDir = PsiManager.getInstance(project).findDirectory(applicationLocation.getParent());
+        if(baseDir == null) {
+            NotificationGroupManager.getInstance()
+                    .getNotificationGroup("CrudGen")
+                    .createNotification("Cannot Find A SpringBootApplication class!", NotificationType.ERROR)
+                    .notify(project);
+            throw new RuntimeException("Cannot find base dir");
         }
-
-        return psiPackage;
+        try {
+            baseDir.checkCreateSubdirectory(packageName);
+            WriteCommandAction.runWriteCommandAction(project, () -> {
+                baseDir.createSubdirectory(packageName);
+            });
+            return Arrays.stream(baseDir.getSubdirectories()).filter(psiElement -> psiElement.getName().equals(packageName)).findFirst().orElseThrow();
+        } catch (Exception e) {
+            return Arrays.stream(baseDir.getSubdirectories()).filter(psiElement -> psiElement.getName().equals(packageName)).findFirst().orElseThrow();
+        }
     }
 
-
+    private VirtualFile findApplicationJavaClassPackage(VirtualFile vFile) {
+        for (VirtualFile child : vFile.getChildren()) {
+            if (!child.isDirectory()) {
+                return child;
+            }
+        }
+        return findApplicationJavaClassPackage(vFile.getChildren()[0]);
+    }
 }
