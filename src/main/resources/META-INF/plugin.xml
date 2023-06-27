@@ -1,0 +1,42 @@
+<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin>
+    <!-- Unique identifier of the plugin. It should be FQN. It cannot be changed between the plugin versions. -->
+    <id>com.crudgen.crudGen</id>
+
+    <!-- Public plugin name should be written in Title Case.
+         Guidelines: https://plugins.jetbrains.com/docs/marketplace/plugin-overview-page.html#plugin-name -->
+    <name>CrudGen</name>
+
+    <!-- A displayed Vendor name or Organization ID displayed on the Plugins Page. -->
+    <vendor email="rei98able@yandex.ru" url="https://www.flareon.ru">Flareon</vendor>
+
+    <!-- Description of the plugin displayed on the Plugin Page and IDE Plugin Manager.
+         Simple HTML elements (text formatting, paragraphs, and lists) can be added inside of <![CDATA[ ]]> tag.
+         Guidelines: https://plugins.jetbrains.com/docs/marketplace/plugin-overview-page.html#plugin-description -->
+    <description><![CDATA[
+    This is a plugin that helps devs to generate crud endpoints and services by simply clicking on database objects.
+    There is also a swagger open api doc generation and model mapper config for update method.
+    This is my first try, hope you will enjoy!
+
+    In order to use plugin you should use Spring Boot version earlier than 2.8, ModelMapper 2.x.x, Lombok, SpringDoc Open Api 1.6.x
+  ]]></description>
+
+    <!-- Product and plugin compatibility requirements.
+         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.database</depends>
+
+    <!-- Extension points defined by the plugin.
+         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
+    <extensions defaultExtensionNs="com.intellij">
+        <notificationGroup id="CrudGen"
+        displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <group id="org.jetbrains.tutorials.actions.GroupedActions" text="CRUD GENERATOR" popup="true" icon="/META-INF/pepega.svg">
+            <add-to-group group-id="DatabaseViewPopupMenu" anchor="after" relative-to-action="DatabaseView.RunExtensionScriptGroup"/>
+            <action id="entity" class="com.crudgen.plugin.action.GenerateCrud" text="Generate CRUD" description="Generate a RESTful CRUD" icon="/META-INF/pepega.svg"/>
+        </group>
+    </actions>
+</idea-plugin>
